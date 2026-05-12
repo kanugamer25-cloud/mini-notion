@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mini Notion</title>
+
+  <!-- Mobile support -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Firebase (IMPORTANT: compat version) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      display: flex;
+      height: 100vh;
+      background: #191919;
+      color: #eee;
+    }
+
+    .sidebar {
+      width: 250px;
+      background: #202020;
+      padding: 15px;
+    }
+
+    .page {
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .page:hover {
+      background: #2a2a2a;
+    }
+
+    .editor {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    textarea {
+      width: 100%;
+      height: 120px;
+      background: #222;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    button {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      background: #333;
+      margin-top: 10px;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+    }
+
+    td, th {
+      border-bottom: 1px solid #333;
+      padding: 8px;
+    }
+
+    input {
+      background: #2a2a2a;
+      border: none;
+      color: white;
+      padding: 5px;
+    }
+
+    /* Calendar */
+    #calendar {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .day {
+      background: #222;
+      padding: 8px;
+      border-radius: 6px;
+      min-height: 80px;
+      font-size: 12px;
+    }
+
+    .task {
+      background: #3a3a3a;
+      padding: 2px 4px;
+      border-radius: 4px;
+      margin-bottom: 3px;
+      font-size: 11px;
+    }
+
+    @media (max-width:700px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; display: flex; overflow-x: auto; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <h3>📂 Pages</h3>
+  <div id="pages"></div>
+  <button onclick="addPage()">+ New Page</button>
+</div>
+
+<!-- Main -->
+<div class="editor">
+  <h1 id="pageTitle">Select a page</h1>
+
+  <textarea id="content" placeholder="Start typing..."></textarea>
+
+  <h3>📊 Tasks</h3>
+  <table id="table"></table>
+
+  <button onclick="addRow()">+ Add Task</button>
+
+  <h3>📅 Calendar</h3>
+  <div id="calendar"></div>
+</div>
+
+<script>
+/* 🔥 YOUR FIREBASE CONFIG (WORKING) */
+const firebaseConfig = {
+  apiKey: "AIzaSyB_TlK2WC1VBdRl7Ta192XdE5SZ8Q-uGIE",
+  authDomain: "todolist-d4cca.firebaseapp.com",
+  projectId: "todolist-d4cca",
+  storageBucket: "todolist-d4cca.firebasestorage.app",
+  messagingSenderId: "302918927094",
+  appId: "1:302918927094:web:4934356bae6231ba1a22d7",
+  measurementId: "G-QVEDNQD7GV"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* DATA */
+let pages = [];
+let currentPage = null;
+
+/* SAVE */
+function save() {
+  localStorage.setItem("pages", JSON.stringify(pages));
+
+  db.collection("pages").doc("data").set({
+    pages: pages
+  });
+}
+
+/* LOAD */
+function loadFromCloud() {
+  db.collection("pages").doc("data").get().then(doc => {
+    if (doc.exists) {
+      pages = doc.data().pages || [];
+    }
+    renderPages();
+  });
+}
+
+/* UI */
+function renderPages() {
+  const container = document.getElementById("pages");
+  container.innerHTML = "";
+
+  pages.forEach((p, i) => {
+    const div = document.createElement("div");
+    div.textContent = p.title;
+    div.className = "page";
+    div.onclick = () => openPage(i);
+    container.appendChild(div);
+  });
+}
+
+function addPage() {
+  const title = prompt("Page name?");
+  if (!title) return;
+
+  pages.push({ title, content: "", tasks: [] });
+  save();
+  renderPages();
+}
+
+function openPage(i) {
+  currentPage = i;
+  const page = pages[i];
+
+  document.getElementById("pageTitle").textContent = page.title;
+  document.getElementById("content").value = page.content;
+
+  renderTable();
+  renderCalendar();
+}
+
+document.getElementById("content").addEventListener("input", () => {
+  if (currentPage === null) return;
+  pages[currentPage].content = document.getElementById("content").value;
+  save();
+});
+
+/* TABLE */
+function renderTable() {
+  if (currentPage === null) return;
+
+  const table = document.getElementById("table");
+  table.innerHTML = "<tr><th>Task</th><th>Status</th><th>Date</th></tr>";
+
+  pages[currentPage].tasks.forEach(task => {
+    const row = document.createElement("tr");
+
+    const td1 = document.createElement("td");
+    const input = document.createElement("input");
+    input.value = task.name;
+    input.oninput = () => { task.name = input.value; save(); renderCalendar(); };
+    td1.appendChild(input);
+
+    const td2 = document.createElement("td");
+    const btn = document.createElement("button");
+
+    function updateBtn() {
+      btn.textContent = task.done ? "✅ Done" : "❌ Not Done";
+      btn.style.background = task.done ? "#2e7d32" : "#444";
+    }
+
+    updateBtn();
+
+    btn.onclick = () => {
+      task.done = !task.done;
+      save();
+      updateBtn();
+      renderCalendar();
+    };
+
+    td2.appendChild(btn);
+
+    const td3 = document.createElement("td");
+    const date = document.createElement("input");
+    date.type = "date";
+    date.value = task.date || "";
+    date.onchange = () => { task.date = date.value; save(); renderCalendar(); };
+    td3.appendChild(date);
+
+    row.appendChild(td1);
+    row.appendChild(td2);
+    row.appendChild(td3);
+
+    table.appendChild(row);
+  });
+}
+
+function addRow() {
+  if (currentPage === null) {
+    alert("Select page first");
+    return;
+  }
+
+  pages[currentPage].tasks.push({
+    name: "New Task",
+    done: false,
+    date: new Date().toISOString().split("T")[0]
+  });
+
+  save();
+  renderTable();
+  renderCalendar();
+}
+
+/* CALENDAR */
+function renderCalendar() {
+  if (currentPage === null) return;
+
+  const cal = document.getElementById("calendar");
+  cal.innerHTML = "";
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+
+  for (let i = 0; i < firstDay; i++) {
+    cal.appendChild(document.createElement("div"));
+  }
+
+  for (let d = 1; d <= days; d++) {
+    const div = document.createElement("div");
+    div.className = "day";
+
+    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+
+    div.innerHTML = `<strong>${d}</strong>`;
+
+    pages[currentPage].tasks.forEach(t => {
+      if (t.date === dateStr) {
+        const el = document.createElement("div");
+        el.className = "task";
+        el.textContent = t.done ? "✅ "+t.name : t.name;
+        div.appendChild(el);
+      }
+    });
+
+    cal.appendChild(div);
+  }
+}
+
+/* START */
+loadFromCloud();
+</script>
+
+</body>
+</html>
